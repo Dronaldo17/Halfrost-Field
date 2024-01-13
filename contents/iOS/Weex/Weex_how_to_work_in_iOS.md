@@ -462,6 +462,19 @@ count、objectForKey:、keyEnumerator、copy这四个操作都是同步操作，
 ```
 setObject:forKey:、removeObjectForKey:、removeAllObjects这三个操作加上了dispatch\_barrier\_async。
 
+0.28.0 之后的版本里 用的是 pthread_mutex_lock 锁保证的线程安全
+
+```objetivec
+    @try {
+        pthread_mutex_lock(&_safeThreadDictionaryMutex);
+        originalObject = [_dict objectForKey:aKey];
+        [_dict setObject:anObject forKey:aKey];
+    }
+    @finally {
+        pthread_mutex_unlock(&_safeThreadDictionaryMutex);
+    }
+```
+
 WXMonitor在整个Weex里面担任的职责是记录下各个操作的tag值和记录成功和失败的原因。WXMonitor封装了各种宏来方便方法的调用。
 
 ```objectivec
@@ -685,8 +698,10 @@ WXSDKEngine的初始化就是整个SDK初始化的关键。
 
 + (void)registerDefaults
 {
+    // 0.28.0 版本之后的
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
+        [self _loadRenderPlugins];  //多一个renderPlusins  但是SDK里没有实现
         [self _registerDefaultComponents];
         [self _registerDefaultModules];
         [self _registerDefaultHandlers];
@@ -720,8 +735,12 @@ WXSDKEngine的初始化就是整个SDK初始化的关键。
     [self registerComponent:@"div" withClass:NSClassFromString(@"WXComponent") withProperties:nil];
     [self registerComponent:@"text" withClass:NSClassFromString(@"WXTextComponent") withProperties:nil];
     [self registerComponent:@"image" withClass:NSClassFromString(@"WXImageComponent") withProperties:nil];
+    [self registerComponent:@"richtext" withClass:NSClassFromString(@"WXRichText") withProperties:nil];
+    
     [self registerComponent:@"scroller" withClass:NSClassFromString(@"WXScrollerComponent") withProperties:nil];
     [self registerComponent:@"list" withClass:NSClassFromString(@"WXListComponent") withProperties:nil];
+    [self registerComponent:@"recycler" withClass:NSClassFromString(@"WXRecyclerComponent") withProperties:nil];
+    [self registerComponent:@"waterfall" withClass:NSClassFromString(@"WXRecyclerComponent") withProperties:nil];
     
     [self registerComponent:@"header" withClass:NSClassFromString(@"WXHeaderComponent")];
     [self registerComponent:@"cell" withClass:NSClassFromString(@"WXCellComponent")];
@@ -733,7 +752,8 @@ WXSDKEngine的初始化就是整个SDK初始化的关键。
     [self registerComponent:@"input" withClass:NSClassFromString(@"WXTextInputComponent")];
     [self registerComponent:@"video" withClass:NSClassFromString(@"WXVideoComponent")];
     [self registerComponent:@"indicator" withClass:NSClassFromString(@"WXIndicatorComponent")];
-    [self registerComponent:@"slider" withClass:NSClassFromString(@"WXSliderComponent")];
+    [self registerComponent:@"slider" withClass:NSClassFromString(@"WXCycleSliderComponent")];
+    [self registerComponent:@"cycleslider" withClass:NSClassFromString(@"WXCycleSliderComponent")];
     [self registerComponent:@"web" withClass:NSClassFromString(@"WXWebComponent")];
     [self registerComponent:@"loading" withClass:NSClassFromString(@"WXLoadingComponent")];
     [self registerComponent:@"loading-indicator" withClass:NSClassFromString(@"WXLoadingIndicator")];
@@ -741,6 +761,24 @@ WXSDKEngine的初始化就是整个SDK初始化的关键。
     [self registerComponent:@"textarea" withClass:NSClassFromString(@"WXTextAreaComponent")];
 	[self registerComponent:@"canvas" withClass:NSClassFromString(@"WXCanvasComponent")];
     [self registerComponent:@"slider-neighbor" withClass:NSClassFromString(@"WXSliderNeighborComponent")];
+    
+    [self registerComponent:@"recycle-list" withClass:NSClassFromString(@"WXRecycleListComponent")];
+    [self registerComponent:@"cell-slot" withClass:NSClassFromString(@"WXCellSlotComponent") withProperties: @{@"append":@"tree", @"isTemplate":@YES}];
+    
+    // other non-default components should be checked with affine-base types.
+    [self _registerAffineTypes];
+
+}
+
++ (void)_registerAffineTypes
+{
+    /* register weex core types that should match RenderList or RenderScroller.
+     "list" and "waterfall" must be registered before "scroller" because "WXListComponent" and "WXRecyclerComponent"
+     are both subclasses of "WXScrollerComponent".
+     */
+    [WXComponentFactory registerBaseType:@"list" withClass:NSClassFromString(@"WXListComponent")];
+    [WXComponentFactory registerBaseType:@"waterfall" withClass:NSClassFromString(@"WXRecyclerComponent")];
+    [WXComponentFactory registerBaseType:@"scroller" withClass:NSClassFromString(@"WXScrollerComponent")];
 }
 
 
